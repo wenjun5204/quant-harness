@@ -19,7 +19,13 @@ def compute_metrics(
 
     total_return = (equities[-1] / equities[0]) - 1.0
     n_years = len(equities) / periods_per_year
-    annualized_return = (equities[-1] / equities[0]) ** (1 / n_years) - 1.0 if n_years > 0 else 0.0
+    if n_years > 0:
+        # Sign-preserving root: a plain ** (1 / n) yields a complex number
+        # once the growth ratio goes negative.
+        growth = float(equities[-1] / equities[0])
+        annualized_return = math.copysign(abs(growth) ** (1 / n_years), growth) - 1.0
+    else:
+        annualized_return = 0.0
 
     std = np.std(returns, ddof=1) if len(returns) > 1 else 0.0
     mean_ret = np.mean(returns) if len(returns) > 0 else 0.0

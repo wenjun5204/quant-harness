@@ -1,0 +1,43 @@
+# A-share daily paper-trading configuration.
+# WARNING: paper trading validates process, not profitability — no return is guaranteed.
+
+initial_cash = 100_000.0
+
+# Stock pool: main-board large caps only (10% price limit, sub-¥500/share so
+# round lots fit the position caps). No 300xxx/688xxx (20% limit).
+symbols = ["600030", "000858", "601318", "600036", "000333", "600276", "600900", "000651"]
+reference_symbol = "600036"  # its bars double as the trading calendar
+
+[fees]
+commission_rate = 0.00025  # 万2.5
+commission_min = 5.0       # per-order minimum, CNY
+stamp_duty_rate = 0.0005   # sell-only
+slippage_rate = 0.001
+
+[risk]
+max_symbol_weight = 0.25
+max_total_exposure = 0.80
+stop_loss = 0.08
+drawdown_halt = 0.10
+
+[strategy]
+# Defaults chosen for worst-case robustness (2023-2026 sweep, selection on
+# 2023-2025 + out-of-sample 2026): momentum_window=60 with an absolute-momentum
+# floor halved the worst-window loss vs. equal-weight buy-and-hold (-4.7% vs
+# -9.7% in 2026H1) at the cost of matching (not beating) it in good years.
+momentum_window = 60
+top_k = 2
+rank_buffer = 2
+min_history = 60
+min_momentum = 0.0   # absolute-momentum floor: hold cash when nothing is rising
+risk_adjusted = false
+
+[paths]
+state_dir = "state"
+cache_dir = "data/cache"
+reports_dir = "reports"
+
+[data]
+fetch_retries = 3
+fetch_retry_sleep_s = 60
+price_limit_check = true

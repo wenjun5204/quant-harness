@@ -6,3 +6,7 @@ build/
 .venv/
 .pytest_cache/
 .DS_Store
+state/
+reports/
+logs/
+data/cache/
