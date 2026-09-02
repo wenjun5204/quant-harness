@@ -265,7 +265,7 @@ def env(tmp_path, monkeypatch):
     class StubSource:
         """Offline stand-in: refresh = read the cache the test wrote."""
 
-        def __init__(self, cache_dir, retries=1, retry_sleep_s=0):
+        def __init__(self, cache_dir, retries=1, retry_sleep_s=0, lookback_years=4):
             self.cache_dir = Path(cache_dir)
 
         def refresh(self, symbol, end_date, start_date=None):
@@ -330,7 +330,7 @@ class TestPublicationSkewRefetch:
         calls = {"AAA": 0}
 
         class LaggySource:
-            def __init__(self, cache_dir, retries=1, retry_sleep_s=0):
+            def __init__(self, cache_dir, retries=1, retry_sleep_s=0, lookback_years=4):
                 self.cache_dir = Path(cache_dir)
 
             def _bars(self, symbol):

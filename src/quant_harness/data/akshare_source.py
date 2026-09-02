@@ -23,15 +23,17 @@ from quant_harness.data.types import Bar
 
 
 class AkshareDataSource:
-    def __init__(self, cache_dir: str | Path, retries: int = 3, retry_sleep_s: int = 300):
+    def __init__(self, cache_dir: str | Path, retries: int = 3, retry_sleep_s: int = 300,
+                 lookback_years: int = 4):
         self.cache_dir = Path(cache_dir)
         self.retries = retries
         self.retry_sleep_s = retry_sleep_s
+        self.lookback_years = lookback_years
         self._eastmoney_disabled = False  # flipped when eastmoney refuses us
 
     def refresh(self, symbol: str, end_date: date, start_date: date | None = None) -> list[Bar]:
         """Full fetch of qfq daily bars through `end_date`; rewrites the cache snapshot."""
-        start = start_date or date(end_date.year - 4, end_date.month, end_date.day)
+        start = start_date or date(end_date.year - self.lookback_years, end_date.month, end_date.day)
 
         bars: list[Bar] | None = None
         if not self._eastmoney_disabled:

@@ -160,3 +160,46 @@ class TestRiskAdjusted:
         }
         weights = strat.target_weights(history, make_account(), DAY0 + timedelta(days=11))
         assert set(weights) == {"UP"}  # DN excluded by the raw-momentum floor
+
+
+class TestMarketFilter:
+    def _history(self, up=True):
+        # pool of 2: both trend the same way over 12 bars
+        rate = 0.02 if up else -0.02
+        a = [10.0 * (1 + rate) ** i for i in range(12)]
+        return {"A": bars_from_closes(a), "B": bars_from_closes([x * 1.5 for x in a])}
+
+    def test_down_market_goes_all_cash(self):
+        strat = MomentumRotation(momentum_window=5, top_k=2, min_history=10,
+                                 min_momentum=-9.9, market_filter_window=5)
+        # pool falling but per-symbol floor off: only the market filter should trigger
+        weights = strat.target_weights(self._history(up=False), make_account(), DAY0 + timedelta(days=11))
+        assert weights == {}
+
+    def test_up_market_passes_through(self):
+        strat = MomentumRotation(momentum_window=5, top_k=2, min_history=10,
+                                 min_momentum=-9.9, market_filter_window=5)
+        weights = strat.target_weights(self._history(up=True), make_account(), DAY0 + timedelta(days=11))
+        assert set(weights) == {"A", "B"}
+
+    def test_filter_overrides_hysteresis(self):
+        """A held position is still liquidated when the pool trend turns down."""
+        strat = MomentumRotation(momentum_window=5, top_k=2, min_history=10,
+                                 min_momentum=-9.9, market_filter_window=5)
+        weights = strat.target_weights(self._history(up=False), make_account(holding="A"), DAY0 + timedelta(days=11))
+        assert weights == {}
+
+    def test_filter_warmup_is_pass_through(self):
+        """Not enough history for the filter yet → normal (unfiltered) behavior."""
+        strat = MomentumRotation(momentum_window=2, top_k=1, min_history=5,
+                                 min_momentum=-9.9, market_filter_window=10)
+        # only 6 bars: filter needs 11 → not ready; ranking needs 5 → ready
+        history = {"A": bars_from_closes([10.0, 10.5, 10.2, 10.8, 11.0, 10.9])}
+        weights = strat.target_weights(history, make_account(), DAY0 + timedelta(days=5))
+        assert weights == {"A": 1.0}  # no market data → filter passes
+
+    def test_disabled_filter_keeps_old_behavior(self):
+        strat = MomentumRotation(momentum_window=5, top_k=2, min_history=10,
+                                 min_momentum=-9.9, market_filter_window=0)
+        weights = strat.target_weights(self._history(up=False), make_account(), DAY0 + timedelta(days=11))
+        assert set(weights) == {"A", "B"}

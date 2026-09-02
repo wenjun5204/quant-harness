@@ -60,7 +60,7 @@ def run_sweep(
     refresh: bool = False,
 ) -> str:
     """Run every grid combination × window; return the full report as text."""
-    source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s)
+    source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s, cfg.fetch_lookback_years)
     history: dict[str, list[Bar]] = _load_history(
         cfg, source, max(end for _, end, _ in windows), allow_fetch=refresh
     )
@@ -73,21 +73,23 @@ def run_sweep(
     summary_rows: list[tuple[str, list[str]]] = []
 
     if benchmark:
-        label = "buy_hold_equal"
-        lines.append(f"== {label} ==")
-        rets = []
-        for start, end, wlabel in windows:
-            result = run_replay(cfg, start, end, history=history, strategy=BuyAndHold(cfg.symbols))
-            m = result["metrics"]
-            lines.append(
-                f"  {wlabel:<14} ret {m.get('total_return', float('nan')):+.1%}"
-                f"  mdd {m.get('max_drawdown', float('nan')):+.1%}"
-                f"  sharpe {m.get('sharpe_ratio', 0.0):.2f}"
-                f"  halt {'yes' if result['halted'] else 'no'}"
-            )
-            rets.append(f"{m.get('total_return', float('nan')):+.1%}")
-        summary_rows.append((label, rets))
-        lines.append("")
+        for bf in (0, 120, 250):
+            label = "buy_hold_equal" if bf == 0 else f"buy_hold_mtf{bf}"
+            lines.append(f"== {label} ==")
+            rets = []
+            for start, end, wlabel in windows:
+                result = run_replay(cfg, start, end, history=history,
+                                    strategy=BuyAndHold(cfg.symbols, market_filter_window=bf))
+                m = result["metrics"]
+                lines.append(
+                    f"  {wlabel:<14} ret {m.get('total_return', float('nan')):+.1%}"
+                    f"  mdd {m.get('max_drawdown', float('nan')):+.1%}"
+                    f"  sharpe {m.get('sharpe_ratio', 0.0):.2f}"
+                    f"  halt {'yes' if result['halted'] else 'no'}"
+                )
+                rets.append(f"{m.get('total_return', float('nan')):+.1%}")
+            summary_rows.append((label, rets))
+            lines.append("")
 
     for combo in combos:
         variant = cfg

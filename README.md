@@ -27,10 +27,14 @@ A minimal event-driven quant backtesting harness in Python, extended with an
 - **`paper/risk.py`**: per-symbol stop-loss (−8%), symbol weight cap (25%), total
   exposure cap (80%), drawdown circuit breaker (−10% from peak → flatten + halt
   until manual `--resume`).
-- **`strategies/momentum_rotation.py`**: momentum rotation over the stock pool
-  with a rank buffer (hysteresis), an absolute-momentum floor (hold cash when
-  nothing in the pool is rising), and optional risk-adjusted ranking. Strategies
-  are pure functions of history — no state to serialize.
+- **`strategies/buy_and_hold.py`** (shipped default): equal-weight basket with
+  an optional pool trend filter (Faber/GTAA-style: all-cash when the pool's
+  120-day equal-weight momentum turns negative).
+- **`strategies/momentum_rotation.py`** (research): momentum rotation with a
+  rank buffer (hysteresis), an absolute-momentum floor, optional risk-adjusted
+  ranking, and the same pool trend filter. Strategies are pure functions of
+  history — no state to serialize; the active one is chosen by
+  `strategy.name` in config.toml.
 - **`daily/sweep.py`**: parameter grid × time-window replays with an equal-weight
   buy-and-hold benchmark (`quant-harness sweep`), so parameter choices can be
   selected on some windows and honestly checked on others.
@@ -74,10 +78,13 @@ resume with `quant-harness daily --resume` when ready.
 
 ## Honest performance note
 
-The 2023–2026 sweep (selection on 2023–2025, out-of-sample 2026) found **no
-momentum configuration that consistently beats equal-weight buy-and-hold** on
-the default 8-stock pool. The shipped defaults (`momentum_window=60`,
-`top_k=2`, `min_momentum=0.0`) were chosen for worst-case robustness — they
-halved the worst-window loss versus buy-and-hold (−4.7% vs −9.7% in 2026H1)
-at the cost of matching, not beating, it in good years. Treat this system as
-infrastructure for strategy research with strict risk control, not as an edge.
+An 8-year sweep (2019–2026, 29 main-board symbols, ~70 parameter combinations,
+selection on 2019–2024 with 2025–2026 out-of-sample) found **no momentum
+configuration that consistently beats diversified buy-and-hold** — cross-sectional
+momentum on A-share blue chips whipsaws (2019 +48%, 2020 −15%). The shipped
+default is therefore equal-weight buy-and-hold with a 120-day pool trend
+filter: over the 8 windows it kept most bull-year upside, cut the 2022 loss
+from −8.5% to −3.8%, and never drew down more than ~10.8% (2020). The filter
+trades roughly half the bull-year upside for halved bear-year drawdowns — a
+risk knob, not an edge. Treat this system as infrastructure for strategy
+research with strict risk control, not as a source of alpha.

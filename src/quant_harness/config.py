@@ -31,12 +31,17 @@ class RiskConfig:
 
 @dataclass(frozen=True)
 class StrategyConfig:
+    # "buy_hold" (equal-weight basket + optional pool trend filter — the shipped
+    # default, chosen for worst-case robustness) or "momentum_rotation" (research).
+    name: str = "buy_hold"
     momentum_window: int = 20
     top_k: int = 4
     rank_buffer: int = 2
     min_history: int = 60
     min_momentum: float | None = None  # absolute-momentum floor; None = off
     risk_adjusted: bool = False  # rank by return/volatility instead of raw return
+    market_filter_window: int = 0  # pool-level trend filter; 0 = off. When the
+    # equal-weight pool return over this window is <= 0, hold cash entirely.
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,7 @@ class Config:
     reports_dir: Path = Path("reports")
     fetch_retries: int = 3
     fetch_retry_sleep_s: int = 300
+    fetch_lookback_years: int = 8
     price_limit_check: bool = True
 
 
@@ -75,5 +81,6 @@ def load_config(path: str | Path) -> Config:
         reports_dir=(root / paths.get("reports_dir", "reports")).resolve(),
         fetch_retries=int(data_cfg.get("fetch_retries", 3)),
         fetch_retry_sleep_s=int(data_cfg.get("fetch_retry_sleep_s", 300)),
+        fetch_lookback_years=int(data_cfg.get("fetch_lookback_years", 8)),
         price_limit_check=bool(data_cfg.get("price_limit_check", True)),
     )

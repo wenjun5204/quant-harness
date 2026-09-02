@@ -3,9 +3,24 @@
 
 initial_cash = 100_000.0
 
-# Stock pool: main-board large caps only (10% price limit, sub-¥500/share so
-# round lots fit the position caps). No 300xxx/688xxx (20% limit).
-symbols = ["600030", "000858", "601318", "600036", "000333", "600276", "600900", "000651"]
+# Stock pool: ~28 main-board large caps across 20+ sectors (all 10% price
+# limit; sub-¥250/share so a round lot fits the 25% symbol cap at ¥100k).
+# No 300xxx/688xxx (20% limit). 600036 doubles as the trading calendar.
+symbols = [
+    "600036", "601166",                    # banks
+    "600030", "601318",                    # broker, insurance
+    "000858", "000568", "600887", "603288",# liquor, dairy, condiments
+    "000333", "000651", "600690",          # appliances
+    "600276", "600196",                    # pharma
+    "600900", "601088",                    # utility, coal
+    "601899", "600019", "601857",          # metals, steel, oil
+    "600309",                              # chemicals
+    "601668", "600048",                    # construction, property
+    "600104", "002714",                    # autos, agriculture
+    "600031",                              # machinery
+    "601006", "601919",                    # rail, shipping
+    "600941", "002415", "000725",          # telecom, electronics, panels
+]
 reference_symbol = "600036"  # its bars double as the trading calendar
 
 [fees]
@@ -21,15 +36,20 @@ stop_loss = 0.08
 drawdown_halt = 0.10
 
 [strategy]
-# Defaults chosen for worst-case robustness (2023-2026 sweep, selection on
-# 2023-2025 + out-of-sample 2026): momentum_window=60 with an absolute-momentum
-# floor halved the worst-window loss vs. equal-weight buy-and-hold (-4.7% vs
-# -9.7% in 2026H1) at the cost of matching (not beating) it in good years.
+# Shipped default: equal-weight basket + 120-day pool trend filter (Faber/GTAA
+# style). Chosen over momentum after an 8-year sweep (2019-2026, 29 symbols):
+# no momentum configuration beat diversified buy-and-hold; the trend filter
+# halves drawdowns in bear years at the cost of ~half the bull-year upside.
+# Switch to "momentum_rotation" for research (params below).
+name = "buy_hold"
+market_filter_window = 120  # 0 disables the filter
+
+# momentum_rotation research params (unused unless name = "momentum_rotation")
 momentum_window = 60
 top_k = 2
 rank_buffer = 2
 min_history = 60
-min_momentum = 0.0   # absolute-momentum floor: hold cash when nothing is rising
+min_momentum = 0.0
 risk_adjusted = false
 
 [paths]
@@ -40,4 +60,5 @@ reports_dir = "reports"
 [data]
 fetch_retries = 3
 fetch_retry_sleep_s = 60
+fetch_lookback_years = 8
 price_limit_check = true

@@ -136,16 +136,23 @@ def run_day(
     return result
 
 
-def _build_strategy(cfg: Config) -> MomentumRotation:
+def _build_strategy(cfg: Config) -> PortfolioStrategy:
     s = cfg.strategy
-    return MomentumRotation(
-        momentum_window=s.momentum_window,
-        top_k=s.top_k,
-        rank_buffer=s.rank_buffer,
-        min_history=s.min_history,
-        min_momentum=s.min_momentum,
-        risk_adjusted=s.risk_adjusted,
-    )
+    if s.name == "buy_hold":
+        from quant_harness.strategies.buy_and_hold import BuyAndHold
+
+        return BuyAndHold(cfg.symbols, market_filter_window=s.market_filter_window)
+    if s.name == "momentum_rotation":
+        return MomentumRotation(
+            momentum_window=s.momentum_window,
+            top_k=s.top_k,
+            rank_buffer=s.rank_buffer,
+            min_history=s.min_history,
+            min_momentum=s.min_momentum,
+            risk_adjusted=s.risk_adjusted,
+            market_filter_window=s.market_filter_window,
+        )
+    raise ValueError(f"unknown strategy {s.name!r}; expected 'buy_hold' or 'momentum_rotation'")
 
 
 FETCH_SYMBOL_DELAY_S = 2.0  # pacing between symbols to avoid upstream rate limits
@@ -219,7 +226,7 @@ def run_daily(
         account.halted = False
         account.halt_reason = None
 
-    source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s)
+    source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s, cfg.fetch_lookback_years)
     history: dict[str, list[Bar]] = {}
     for i, sym in enumerate(cfg.symbols):
         if i:
@@ -264,7 +271,7 @@ def run_replay(
 ) -> dict:
     """Walk-forward backtest: the same run_day loop over historical dates, in memory."""
     if history is None:
-        source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s)
+        source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s, cfg.fetch_lookback_years)
         history = _load_history(cfg, source, end, allow_fetch=refresh)
     missing = [s for s in cfg.symbols if not history.get(s)]
     if missing:
