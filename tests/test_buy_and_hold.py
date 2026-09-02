@@ -2,6 +2,9 @@
 
 from datetime import date, timedelta
 
+from datetime import datetime
+
+from quant_harness.data.types import Bar
 from tests.test_momentum_rotation import DAY0, bars_from_closes, make_account
 from quant_harness.strategies.buy_and_hold import BuyAndHold
 
@@ -66,6 +69,21 @@ class TestStrategyDispatch:
         assert isinstance(strat, BuyAndHold)
         assert strat.market_filter_window == 120
         assert strat.symbols == ["A", "B"]
+        assert strat.market_filter_source == "index"  # default
+
+    def test_build_strategy_honors_filter_source(self):
+        """Regression: dispatch must pass market_filter_source through — a
+        missing pass-through silently made every 'pool' run use the index."""
+        from quant_harness.config import Config, StrategyConfig
+        from quant_harness.daily.runner import _build_strategy
+
+        for source in ("pool", "index"):
+            cfg = Config(symbols=["A", "B"],
+                         strategy=StrategyConfig(name="buy_hold", market_filter_source=source))
+            assert _build_strategy(cfg).market_filter_source == source
+        cfg = Config(symbols=["A", "B"],
+                     strategy=StrategyConfig(name="momentum_rotation", market_filter_source="pool"))
+        assert _build_strategy(cfg).market_filter_source == "pool"
 
     def test_build_strategy_momentum(self):
         from quant_harness.config import Config, StrategyConfig
@@ -86,3 +104,42 @@ class TestStrategyDispatch:
         cfg = Config(symbols=["A"], strategy=StrategyConfig(name="nope"))
         with pytest.raises(ValueError, match="nope"):
             _build_strategy(cfg)
+
+
+class TestIndexSource:
+    """market_filter_source='index' must judge the index, not the pool."""
+
+    def _mk_bars(self, closes):
+        return [Bar(datetime.combine(DAY0 + timedelta(days=i), datetime.min.time()),
+                    c * 0.99, c * 1.01, c * 0.98, c) for i, c in enumerate(closes)]
+
+    def test_falling_index_overrides_rising_pool(self):
+        strat = BuyAndHold(["A", "B"], market_filter_window=5, market_filter_source="index")
+        history = {"A": self._mk_bars([10 * 1.01 ** i for i in range(12)]),   # pool rising
+                   "B": self._mk_bars([10 * 1.01 ** i for i in range(12)])}
+        index = self._mk_bars([4000 * 0.99 ** i for i in range(12)])          # index falling
+        w = strat.target_weights(history, make_account(), DAY0 + timedelta(days=11), index)
+        assert w == {}
+
+    def test_rising_index_passes_falling_pool(self):
+        strat = BuyAndHold(["A", "B"], market_filter_window=5, market_filter_source="index")
+        history = {"A": self._mk_bars([10 * 0.99 ** i for i in range(12)]),
+                   "B": self._mk_bars([10 * 0.99 ** i for i in range(12)])}
+        index = self._mk_bars([4000 * 1.01 ** i for i in range(12)])
+        w = strat.target_weights(history, make_account(), DAY0 + timedelta(days=11), index)
+        assert w == {"A": 0.5, "B": 0.5}
+
+    def test_pool_source_ignores_index(self):
+        strat = BuyAndHold(["A", "B"], market_filter_window=5, market_filter_source="pool")
+        history = {"A": self._mk_bars([10 * 1.01 ** i for i in range(12)]),   # pool rising
+                   "B": self._mk_bars([10 * 1.01 ** i for i in range(12)])}
+        index = self._mk_bars([4000 * 0.99 ** i for i in range(12)])          # index falling
+        w = strat.target_weights(history, make_account(), DAY0 + timedelta(days=11), index)
+        assert w == {"A": 0.5, "B": 0.5}  # pool source: index irrelevant
+
+    def test_no_index_data_falls_back_to_pool(self):
+        strat = BuyAndHold(["A", "B"], market_filter_window=5, market_filter_source="index")
+        history = {"A": self._mk_bars([10 * 0.99 ** i for i in range(12)]),   # pool falling
+                   "B": self._mk_bars([10 * 0.99 ** i for i in range(12)])}
+        w = strat.target_weights(history, make_account(), DAY0 + timedelta(days=11), None)
+        assert w == {}  # no index → pool proxy kicks in

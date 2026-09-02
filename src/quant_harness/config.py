@@ -40,15 +40,20 @@ class StrategyConfig:
     min_history: int = 60
     min_momentum: float | None = None  # absolute-momentum floor; None = off
     risk_adjusted: bool = False  # rank by return/volatility instead of raw return
-    market_filter_window: int = 0  # pool-level trend filter; 0 = off. When the
-    # equal-weight pool return over this window is <= 0, hold cash entirely.
+    market_filter_window: int = 0  # market trend filter; 0 = off. When the
+    # filter series return over this window is <= 0, hold cash entirely.
+    market_filter_source: str = "index"  # "index" (CSI 300 via market_index)
+    # or "pool" (equal-weight pool return — the pre-index proxy)
 
 
 @dataclass(frozen=True)
 class Config:
     initial_cash: float = 100_000.0
     symbols: list[str] = field(default_factory=list)
-    reference_symbol: str = "600036"  # only used as the trading calendar
+    reference_symbol: str = "600036"  # trading-calendar source (a pool symbol
+    # or the market index)
+    market_index: str = "sh000300"  # index used by the market filter and,
+    # when set as reference_symbol, the trading calendar
     fees: Fees = field(default_factory=Fees)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
@@ -73,6 +78,7 @@ def load_config(path: str | Path) -> Config:
         initial_cash=float(raw.get("initial_cash", 100_000.0)),
         symbols=[str(s) for s in raw.get("symbols", [])],
         reference_symbol=str(raw.get("reference_symbol", "600036")),
+        market_index=str(raw.get("market_index", "sh000300")),
         fees=Fees(**raw.get("fees", {})),
         risk=RiskConfig(**raw.get("risk", {})),
         strategy=StrategyConfig(**raw.get("strategy", {})),

@@ -140,3 +140,40 @@ class AkshareDataSource:
         if not path.exists():
             return []
         return load_bars_from_csv(path)
+
+    # -- index data (Sina) -------------------------------------------------
+
+    def refresh_index(self, symbol: str, end_date: date, start_date: date | None = None) -> list[Bar]:
+        """Full fetch of index daily bars through `end_date`; rewrites the cache."""
+        bars = self._with_retry(self._sina_index_bars, symbol, start_date, end_date)
+        self._write_cache(f"index_{symbol}", bars)
+        return bars
+
+    def _sina_index_bars(self, symbol: str, start: date | None, end_date: date) -> list[Bar]:
+        import akshare as ak  # lazy: the core package and tests never need it
+
+        df = ak.stock_zh_index_daily(symbol=symbol)  # full history, no range args
+        bars: list[Bar] = []
+        for _, row in df.iterrows():
+            ts = row["date"]
+            if isinstance(ts, str):
+                timestamp = datetime.strptime(ts, "%Y-%m-%d")
+            else:
+                timestamp = datetime(ts.year, ts.month, ts.day)
+            bars.append(
+                Bar(
+                    timestamp,
+                    float(row["open"]),
+                    float(row["high"]),
+                    float(row["low"]),
+                    float(row["close"]),
+                    float(row["volume"]),
+                )
+            )
+        if start is not None:
+            bars = [b for b in bars if b.timestamp.date() >= start]
+        bars = [b for b in bars if b.timestamp.date() <= end_date]
+        return bars
+
+    def load_cached_index(self, symbol: str) -> list[Bar]:
+        return self.load_cached(f"index_{symbol}")

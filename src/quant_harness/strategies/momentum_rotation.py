@@ -11,7 +11,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Mapping
 
 from quant_harness.data.types import Bar
-from quant_harness.strategy.portfolio import PortfolioStrategy, pool_momentum
+from quant_harness.strategy.portfolio import PortfolioStrategy, pool_momentum, series_momentum
 
 if TYPE_CHECKING:
     from quant_harness.paper.account import PaperAccount
@@ -32,7 +32,8 @@ def _bars_upto(bars: list[Bar], as_of: date) -> int:
 class MomentumRotation(PortfolioStrategy):
     def __init__(self, momentum_window: int = 20, top_k: int = 4, rank_buffer: int = 2,
                  min_history: int = 60, min_momentum: float | None = None,
-                 risk_adjusted: bool = False, market_filter_window: int = 0):
+                 risk_adjusted: bool = False, market_filter_window: int = 0,
+                 market_filter_source: str = "index"):
         if momentum_window < 1 or top_k < 1 or rank_buffer < 0 or min_history < 1:
             raise ValueError("momentum_window, top_k, min_history must be >= 1 and rank_buffer >= 0")
         self.momentum_window = momentum_window
@@ -42,6 +43,7 @@ class MomentumRotation(PortfolioStrategy):
         self.min_momentum = min_momentum
         self.risk_adjusted = risk_adjusted
         self.market_filter_window = market_filter_window
+        self.market_filter_source = market_filter_source
 
     def score(self, tail: list[Bar]) -> tuple[float, float]:
         """(raw momentum, ranking score). Score is Sharpe-like when risk_adjusted."""
@@ -76,8 +78,14 @@ class MomentumRotation(PortfolioStrategy):
         """Public ranking for reports: (symbol, raw momentum), best score first."""
         return [(s, m) for s, _, m in self._rank_with_raw(history, as_of)]
 
-    def market_momentum(self, history: Mapping[str, list[Bar]], as_of: date) -> float | None:
-        """Equal-weight pool momentum over `market_filter_window` bars; None if not ready."""
+    def market_momentum(self, history: Mapping[str, list[Bar]], as_of: date,
+                        market_history: list[Bar] | None = None) -> float | None:
+        """Regime momentum over `market_filter_window` bars: index-based when
+        available, else the equal-weight pool proxy. None if not ready."""
+        if self.market_filter_window <= 0:
+            return None
+        if self.market_filter_source == "index" and market_history is not None:
+            return series_momentum(market_history, as_of, self.market_filter_window)
         return pool_momentum(history, as_of, self.market_filter_window)
 
     def target_weights(
@@ -85,11 +93,11 @@ class MomentumRotation(PortfolioStrategy):
         history: Mapping[str, list[Bar]],
         account: PaperAccount,
         as_of: date,
+        market_history: list[Bar] | None = None,
     ) -> dict[str, float]:
-        if self.market_filter_window > 0:
-            market = self.market_momentum(history, as_of)
-            if market is not None and market <= 0:
-                return {}  # pool trend is down: all cash (hysteresis overridden)
+        market = self.market_momentum(history, as_of, market_history)
+        if market is not None and market <= 0:
+            return {}  # market trend is down: all cash (hysteresis overridden)
         raw_ranked = self._rank_with_raw(history, as_of)
 
         def passes_floor(momentum: float) -> bool:

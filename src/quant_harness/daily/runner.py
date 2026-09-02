@@ -43,6 +43,8 @@ class DayResult:
     queued: list = field(default_factory=list)
     risk_notes: list[str] = field(default_factory=list)
     ranks: list[tuple[str, float]] = field(default_factory=list)  # (symbol, momentum), best first
+    market_momentum: float | None = None  # filter reading that gated today's decision
+    filter_source: str = ""               # "pool" | "index" | "" (filter off)
 
 
 def _day_bars(history: Mapping[str, list[Bar]], day: date) -> dict[str, Bar]:
@@ -74,6 +76,7 @@ def run_day(
     strategy: PortfolioStrategy,
     history: Mapping[str, list[Bar]],
     day: date,
+    market_history: list[Bar] | None = None,
 ) -> DayResult | None:
     """Process one trading day. Returns None if `day` is not a trading day."""
     day_bars = _day_bars(history, day)
@@ -118,7 +121,18 @@ def run_day(
 
         # 5. strategy pass (never sees bars after `day`)
         view = slice_history(history, day)
-        weights = strategy.target_weights(view, account, day)
+        market_view = (
+            [b for b in market_history if b.timestamp.date() <= day] if market_history is not None else None
+        )
+        market_momentum = None
+        if hasattr(strategy, "market_momentum") and strategy.market_filter_window > 0:
+            source = getattr(strategy, "market_filter_source", "pool")
+            m = strategy.market_momentum(view, day, market_view)
+            if m is not None:
+                result.market_momentum = m
+                result.filter_source = source
+                market_momentum = m
+        weights = strategy.target_weights(view, account, day, market_view)
         closes = {sym: bar.close for sym, bar in day_bars.items()}
         orders = reconcile(weights, account, closes, day, account.fees)
         # never buy back a symbol that is being force-exited today
@@ -141,7 +155,11 @@ def _build_strategy(cfg: Config) -> PortfolioStrategy:
     if s.name == "buy_hold":
         from quant_harness.strategies.buy_and_hold import BuyAndHold
 
-        return BuyAndHold(cfg.symbols, market_filter_window=s.market_filter_window)
+        return BuyAndHold(
+            cfg.symbols,
+            market_filter_window=s.market_filter_window,
+            market_filter_source=s.market_filter_source,
+        )
     if s.name == "momentum_rotation":
         return MomentumRotation(
             momentum_window=s.momentum_window,
@@ -151,6 +169,7 @@ def _build_strategy(cfg: Config) -> PortfolioStrategy:
             min_momentum=s.min_momentum,
             risk_adjusted=s.risk_adjusted,
             market_filter_window=s.market_filter_window,
+            market_filter_source=s.market_filter_source,
         )
     raise ValueError(f"unknown strategy {s.name!r}; expected 'buy_hold' or 'momentum_rotation'")
 
@@ -158,12 +177,13 @@ def _build_strategy(cfg: Config) -> PortfolioStrategy:
 FETCH_SYMBOL_DELAY_S = 2.0  # pacing between symbols to avoid upstream rate limits
 
 
-def _refetch_laggards(history: dict[str, list[Bar]], source: AkshareDataSource, cfg: Config, today: date) -> None:
-    """Publication-skew guard: the reference symbol has today's bar but some pool
+def _refetch_laggards(history: dict[str, list[Bar]], source: AkshareDataSource, cfg: Config, today: date,
+                      reference: list[Bar] | None = None) -> None:
+    """Publication-skew guard: the reference series has today's bar but some pool
     symbols don't. Their data may simply be published a few minutes later —
-    refetch once before treating them as suspended (a wrongly-"suspended"
+    refetch once before treating them as suspended (a wrongly-suspended
     symbol gets no buy orders for the day)."""
-    ref = history.get(cfg.reference_symbol) or []
+    ref = reference if reference is not None else (history.get(cfg.reference_symbol) or [])
     if not ref or ref[-1].timestamp.date() != today:
         return
     lagging = [s for s, b in history.items() if not b or b[-1].timestamp.date() < today]
@@ -236,9 +256,24 @@ def run_daily(
         except RuntimeError as e:
             print(f"warning: {e}; falling back to cache")
             history[sym] = source.load_cached(sym)
-    _refetch_laggards(history, source, cfg, today)
 
-    ref_bars = history.get(cfg.reference_symbol, [])
+    market_history: list[Bar] = []
+    if cfg.market_index:
+        try:
+            market_history = source.refresh_index(
+                cfg.market_index, today,
+                start_date=date(today.year - cfg.fetch_lookback_years, today.month, today.day),
+            )
+        except RuntimeError as e:
+            print(f"warning: index fetch failed ({e}); falling back to cache")
+            market_history = source.load_cached_index(cfg.market_index)
+    _refetch_laggards(history, source, cfg, today, reference=market_history or None)
+
+    ref_bars = (
+        market_history
+        if cfg.reference_symbol == cfg.market_index and market_history
+        else history.get(cfg.reference_symbol, [])
+    )
     start = account.last_processed_date + timedelta(days=1) if account.last_processed_date else today
     days = trading_days(ref_bars, start, today)
     if not days:
@@ -248,7 +283,7 @@ def run_daily(
     risk = RiskManager(cfg.risk)
     strategy = _build_strategy(cfg)
     for day in days:
-        result = run_day(account, risk, strategy, history, day)
+        result = run_day(account, risk, strategy, history, day, market_history or None)
         if result is None:
             continue
         account.save(state_path)
@@ -268,16 +303,24 @@ def run_replay(
     refresh: bool = False,
     strategy: PortfolioStrategy | None = None,
     history: dict[str, list[Bar]] | None = None,
+    market_history: list[Bar] | None = None,
 ) -> dict:
     """Walk-forward backtest: the same run_day loop over historical dates, in memory."""
-    if history is None:
+    if history is None or market_history is None:
         source = AkshareDataSource(cfg.cache_dir, cfg.fetch_retries, cfg.fetch_retry_sleep_s, cfg.fetch_lookback_years)
-        history = _load_history(cfg, source, end, allow_fetch=refresh)
+        if history is None:
+            history = _load_history(cfg, source, end, allow_fetch=refresh)
+        if market_history is None and cfg.market_index:
+            market_history = source.load_cached_index(cfg.market_index) or None
     missing = [s for s in cfg.symbols if not history.get(s)]
     if missing:
         raise RuntimeError(f"no cached data for {missing}; run with --refresh first")
 
-    ref_bars = history.get(cfg.reference_symbol, [])
+    ref_bars = (
+        market_history
+        if cfg.reference_symbol == cfg.market_index and market_history
+        else history.get(cfg.reference_symbol, [])
+    )
     days = trading_days(ref_bars, start, end)
 
     account = PaperAccount(cfg.initial_cash, cfg.fees, cfg.price_limit_check)
@@ -285,7 +328,7 @@ def run_replay(
     if strategy is None:
         strategy = _build_strategy(cfg)
     for day in days:
-        run_day(account, risk, strategy, history, day)
+        run_day(account, risk, strategy, history, day, market_history)
 
     metrics = compute_metrics(account.equity_curve, []) if len(account.equity_curve) >= 2 else {}
     metrics.update(trade_stats(account.trades))

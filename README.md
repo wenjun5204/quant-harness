@@ -28,8 +28,11 @@ A minimal event-driven quant backtesting harness in Python, extended with an
   exposure cap (80%), drawdown circuit breaker (−10% from peak → flatten + halt
   until manual `--resume`).
 - **`strategies/buy_and_hold.py`** (shipped default): equal-weight basket with
-  an optional pool trend filter (Faber/GTAA-style: all-cash when the pool's
-  120-day equal-weight momentum turns negative).
+  an optional market trend filter (Faber/GTAA-style: all-cash when the trend
+  turns negative). The filter judges the pool's own equal-weight trend by
+  default (`market_filter_source = "pool"`) — matching the filter to the
+  portfolio it gates beat using the CSI 300 index in 7 of 9 backtest windows —
+  with `"index"` available as an alternative.
 - **`strategies/momentum_rotation.py`** (research): momentum rotation with a
   rank buffer (hysteresis), an absolute-momentum floor, optional risk-adjusted
   ranking, and the same pool trend filter. Strategies are pure functions of

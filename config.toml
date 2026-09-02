@@ -21,7 +21,9 @@ symbols = [
     "601006", "601919",                    # rail, shipping
     "600941", "002415", "000725",          # telecom, electronics, panels
 ]
-reference_symbol = "600036"  # its bars double as the trading calendar
+market_index = "sh000300"     # CSI 300: market filter + trading calendar
+reference_symbol = "sh000300" # index publishes earlier than stocks; pool
+                             # symbols lagging it get refetched, not suspended
 
 [fees]
 commission_rate = 0.00025  # 万2.5
@@ -43,6 +45,10 @@ drawdown_halt = 0.10
 # Switch to "momentum_rotation" for research (params below).
 name = "buy_hold"
 market_filter_window = 120  # 0 disables the filter
+# Filter on the pool's own trend, not the CSI 300: the filter should match the
+# portfolio it gates (equal-weight pool ≠ cap-weighted index; 2019-2026 sweep
+# shows pool-source dominating index-source in 7 of 9 windows).
+market_filter_source = "pool"
 
 # momentum_rotation research params (unused unless name = "momentum_rotation")
 momentum_window = 60

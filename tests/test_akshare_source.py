@@ -41,6 +41,20 @@ def fake_daily_fn(rows: list[dict], fail_times: int = 0):
     return fn
 
 
+def fake_index_fn(rows: list[dict], fail_times: int = 0):
+    """Stand-in for ak.stock_zh_index_daily (only a `symbol` argument)."""
+    calls = {"n": 0}
+
+    def fn(symbol):
+        calls["n"] += 1
+        if calls["n"] <= fail_times:
+            raise ConnectionError("network down")
+        return pd.DataFrame(rows)
+
+    fn.calls = calls
+    return fn
+
+
 ROWS = [
     {"日期": "2025-06-02", "开盘": 10.0, "最高": 10.5, "最低": 9.8, "收盘": 10.2, "成交量": 12345},
     {"日期": "2025-06-03", "开盘": 10.3, "最高": 10.8, "最低": 10.1, "收盘": 10.6, "成交量": 23456},
@@ -162,3 +176,34 @@ class TestSinaFallback:
         src = AkshareDataSource(tmp_path, retries=2, retry_sleep_s=0)
         with pytest.raises(RuntimeError, match="000858"):
             src.refresh("000858", date(2025, 6, 3))
+
+
+class TestIndexFetch:
+    INDEX_ROWS = [
+        {"date": "2025-06-02", "open": 4000.0, "high": 4050.0, "low": 3980.0, "close": 4020.0, "volume": 1e8},
+        {"date": "2025-06-03", "open": 4020.0, "high": 4080.0, "low": 4010.0, "close": 4060.0, "volume": 1.2e8},
+    ]
+
+    def test_refresh_index_maps_and_caches(self, fake_akshare, tmp_path):
+        fn = fake_index_fn(self.INDEX_ROWS)
+        fake_akshare.stock_zh_index_daily = fn
+        src = AkshareDataSource(tmp_path, retries=1, retry_sleep_s=0)
+        bars = src.refresh_index("sh000300", date(2025, 6, 3))
+        assert [b.close for b in bars] == [4020.0, 4060.0]
+        assert fn.calls["n"] == 1
+        # cached under index_<symbol>.csv and reloadable
+        cached = src.load_cached_index("sh000300")
+        assert [b.close for b in cached] == [4020.0, 4060.0]
+
+    def test_refresh_index_slices_to_start_and_end(self, fake_akshare, tmp_path):
+        fake_akshare.stock_zh_index_daily = fake_index_fn(self.INDEX_ROWS)
+        src = AkshareDataSource(tmp_path, retries=1, retry_sleep_s=0)
+        bars = src.refresh_index("sh000300", date(2025, 6, 3), start_date=date(2025, 6, 3))
+        assert [b.timestamp.date().isoformat() for b in bars] == ["2025-06-03"]
+
+    def test_refresh_index_retries(self, fake_akshare, tmp_path):
+        fn = fake_index_fn(self.INDEX_ROWS, fail_times=1)
+        fake_akshare.stock_zh_index_daily = fn
+        src = AkshareDataSource(tmp_path, retries=2, retry_sleep_s=0)
+        bars = src.refresh_index("sh000300", date(2025, 6, 3))
+        assert len(bars) == 2 and fn.calls["n"] == 2

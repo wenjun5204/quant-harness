@@ -84,6 +84,15 @@ def write_daily_report(path: str | Path, result: DayResult, account: PaperAccoun
             lines.append(f"| {o.symbol} | {o.side} | {o.quantity} | {o.reason} |")
         lines.append("")
 
+    if result.market_momentum is not None:
+        gate = "持仓" if result.market_momentum > 0 else "空仓观望"
+        src_label = {"pool": "池等权", "index": "市场指数"}.get(result.filter_source, result.filter_source)
+        lines.append("## 市场过滤")
+        lines.append(f"- 趋势读数: **{result.market_momentum:+.2%}** ({src_label}) → **{gate}**")
+        if result.market_momentum <= 0 and not account.positions:
+            lines.append("- 趋势未转正，系统不建仓。转正(>0)后次日开始分批买入，无需人工干预。")
+        lines.append("")
+
     if result.risk_notes:
         lines.append("## 风控")
         for note in result.risk_notes:

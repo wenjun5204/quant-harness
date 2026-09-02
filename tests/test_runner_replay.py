@@ -57,7 +57,7 @@ class StubStrategy(PortfolioStrategy):
         self.weights = weights
         self.hold_after = hold_after
 
-    def target_weights(self, history, account, as_of):
+    def target_weights(self, history, account, as_of, market_history=None):
         if as_of == self.trigger_day or (self.hold_after and as_of > self.trigger_day):
             return dict(self.weights)
         return {}
@@ -280,6 +280,12 @@ def env(tmp_path, monkeypatch):
             p = self.cache_dir / f"{symbol}.csv"
             return load_bars_from_csv(p) if p.exists() else []
 
+        def refresh_index(self, symbol, end_date, start_date=None):
+            return []  # no index data in this test env
+
+        def load_cached_index(self, symbol):
+            return []
+
     monkeypatch.setattr(runner_mod, "AkshareDataSource", StubSource)
     return cfg, days
 
@@ -348,6 +354,12 @@ class TestPublicationSkewRefetch:
 
             def load_cached(self, symbol):
                 return self._bars(symbol)
+
+            def refresh_index(self, symbol, end_date, start_date=None):
+                return []
+
+            def load_cached_index(self, symbol):
+                return []
 
         monkeypatch.setattr(runner_mod, "AkshareDataSource", LaggySource)
         assert run_daily(cfg, today=today) == 0

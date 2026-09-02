@@ -67,6 +67,7 @@ def run_sweep(
     missing = [s for s in cfg.symbols if not history.get(s)]
     if missing:
         raise RuntimeError(f"no cached data for {missing}; run with --refresh first")
+    market_history = source.load_cached_index(cfg.market_index) if cfg.market_index else None
 
     combos = list(itertools.product(*[values for _, values in grids])) if grids else [()]
     lines: list[str] = []
@@ -78,7 +79,7 @@ def run_sweep(
             lines.append(f"== {label} ==")
             rets = []
             for start, end, wlabel in windows:
-                result = run_replay(cfg, start, end, history=history,
+                result = run_replay(cfg, start, end, history=history, market_history=market_history,
                                     strategy=BuyAndHold(cfg.symbols, market_filter_window=bf))
                 m = result["metrics"]
                 lines.append(
@@ -101,7 +102,7 @@ def run_sweep(
         lines.append(f"== {header} ==")
         rets = []
         for start, end, wlabel in windows:
-            result = run_replay(variant, start, end, history=history)
+            result = run_replay(variant, start, end, history=history, market_history=market_history)
             m = result["metrics"]
             pf = m.get("profit_factor", 0.0)
             pf_s = "inf" if pf == float("inf") else f"{pf:.2f}"
