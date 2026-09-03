@@ -14,10 +14,11 @@
 ```bash
 ./.venv/bin/quant-harness status          # 净值/持仓/待成交
 ./.venv/bin/quant-harness report          # 最新日报（含趋势读数）
+./.venv/bin/quant-harness scan            # 全池近况扫描（多窗口动量/波动/回撤）
 ./.venv/bin/quant-harness daily           # 手动补跑（幂等，cron 漏了就跑这个）
 ./.venv/bin/quant-harness daily --resume  # 熔断后手动恢复（先向用户确认）
 ./.venv/bin/quant-harness replay --start 2026-01-02 --end 2026-09-02  # 回放
-./.venv/bin/python -m pytest              # 测试（93 个，离线）
+./.venv/bin/python -m pytest              # 测试（96 个，离线）
 ```
 
 ## Agent 日常值守规则

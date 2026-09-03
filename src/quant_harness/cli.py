@@ -8,11 +8,13 @@ from datetime import date
 from pathlib import Path
 
 from quant_harness.config import load_config
+from quant_harness.logging_setup import configure_logging
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="quant-harness", description="A-share daily paper-trading harness")
     parser.add_argument("--config", default="config.toml", help="path to config.toml (default: ./config.toml)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_daily = sub.add_parser("daily", help="run today's paper-trading cycle (idempotent)")
@@ -24,6 +26,11 @@ def main(argv: list[str] | None = None) -> int:
     p_replay.add_argument("--refresh", action="store_true", help="refresh data from akshare before replaying")
 
     sub.add_parser("status", help="print current account status")
+
+    p_scan = sub.add_parser("scan", help="recent performance of every pool symbol")
+    p_scan.add_argument("--as-of", type=date.fromisoformat, help="scan date YYYY-MM-DD (default: latest data)")
+    p_scan.add_argument("--window", type=int, default=60, help="main window in trading days (default: 60 ≈ 3 months)")
+    p_scan.add_argument("--refresh", action="store_true", help="refresh data from akshare first")
 
     p_sweep = sub.add_parser("sweep", help="parameter grid × time-window replay sweep")
     p_sweep.add_argument("--window", action="append", required=True,
@@ -37,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     p_report.add_argument("date", nargs="?", help="report date YYYY-MM-DD (default: latest)")
 
     args = parser.parse_args(argv)
+    configure_logging(verbose=args.verbose)
     cfg = load_config(args.config)
 
     if args.command == "daily":
@@ -75,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error(f"--set expects PATH=v1,v2,..., got {spec!r}")
             grids.append((path.strip(), [parse_value(v) for v in values.split(",")]))
         print(run_sweep(cfg, windows, grids, benchmark=args.benchmark, refresh=args.refresh))
+        return 0
+
+    if args.command == "scan":
+        from quant_harness.daily.scan import run_scan
+
+        print(run_scan(cfg, as_of=args.as_of, window=args.window, refresh=args.refresh))
         return 0
 
     if args.command == "status":

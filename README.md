@@ -58,6 +58,7 @@ quant-harness replay --start 2026-01-02 --end 2026-08-31 --refresh  # walk-forwa
 quant-harness daily                      # today's paper-trading cycle (idempotent)
 quant-harness status                     # account status
 quant-harness report                     # latest daily report
+quant-harness scan                       # per-symbol recent performance scan
 quant-harness sweep --window 2025-01-01:2025-12-31:2025 \
   --window 2026-01-02:2026-06-30:2026H1 \
   --set strategy.momentum_window=20,60 \

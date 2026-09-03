@@ -19,7 +19,11 @@ from datetime import date, datetime
 from pathlib import Path
 
 from quant_harness.data.loader import load_bars_from_csv
+from quant_harness.logging_setup import get_logger
 from quant_harness.data.types import Bar
+
+
+logger = get_logger("akshare")
 
 
 class AkshareDataSource:
@@ -40,7 +44,7 @@ class AkshareDataSource:
             try:  # one attempt only: a refused connection means we are rate-limited
                 bars = self._eastmoney_bars(symbol, start, end_date)
             except Exception as e:  # noqa: BLE001
-                print(f"warning: eastmoney unavailable ({e}); switching to Sina for this run")
+                logger.warning("eastmoney unavailable (%s); switching to Sina for this run", e)
                 self._eastmoney_disabled = True
 
         if bars is None:

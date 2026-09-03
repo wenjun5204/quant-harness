@@ -23,6 +23,7 @@ from datetime import date, timedelta
 from typing import Mapping
 
 from quant_harness.config import Config
+from quant_harness.logging_setup import get_logger
 from quant_harness.data.akshare_source import AkshareDataSource
 from quant_harness.data.calendar import slice_history, trading_days
 from quant_harness.data.types import Bar
@@ -33,6 +34,8 @@ from quant_harness.paper.risk import RiskManager
 from quant_harness.paper.stats import trade_stats
 from quant_harness.strategy.portfolio import PortfolioStrategy
 from quant_harness.strategies.momentum_rotation import MomentumRotation
+
+logger = get_logger("runner")
 
 
 @dataclass
@@ -197,10 +200,10 @@ def _refetch_laggards(history: dict[str, list[Bar]], source: AkshareDataSource, 
         new_last = refreshed[-1].timestamp.date() if refreshed else None
         if new_last and (old_last is None or new_last > old_last):
             history[sym] = refreshed
-            print(f"note: {sym} data was published late; refetched")
+            logger.info("%s data was published late; refetched", sym)
     still = [s for s, b in history.items() if not b or b[-1].timestamp.date() < today]
     if still:
-        print(f"warning: no bar today for {still}; treated as suspended")
+        logger.warning("no bar today for %s; treated as suspended", still)
 
 
 def _load_history(cfg: Config, source: AkshareDataSource, end_date: date, allow_fetch: bool) -> dict[str, list[Bar]]:
@@ -242,7 +245,7 @@ def run_daily(
         account = PaperAccount(cfg.initial_cash, cfg.fees, cfg.price_limit_check)
 
     if resume and account.halted:
-        print("resuming: halt flag cleared")
+        logger.info("resuming: halt flag cleared")
         account.halted = False
         account.halt_reason = None
 
@@ -254,7 +257,7 @@ def run_daily(
         try:
             history[sym] = source.refresh(sym, today)
         except RuntimeError as e:
-            print(f"warning: {e}; falling back to cache")
+            logger.warning("%s; falling back to cache", e)
             history[sym] = source.load_cached(sym)
 
     market_history: list[Bar] = []
@@ -265,7 +268,7 @@ def run_daily(
                 start_date=date(today.year - cfg.fetch_lookback_years, today.month, today.day),
             )
         except RuntimeError as e:
-            print(f"warning: index fetch failed ({e}); falling back to cache")
+            logger.warning("index fetch failed (%s); falling back to cache", e)
             market_history = source.load_cached_index(cfg.market_index)
     _refetch_laggards(history, source, cfg, today, reference=market_history or None)
 
@@ -277,7 +280,7 @@ def run_daily(
     start = account.last_processed_date + timedelta(days=1) if account.last_processed_date else today
     days = trading_days(ref_bars, start, today)
     if not days:
-        print("no new trading days to process")
+        logger.info("no new trading days to process")
         return 0
 
     risk = RiskManager(cfg.risk)
@@ -288,10 +291,10 @@ def run_daily(
             continue
         account.save(state_path)
         write_daily_report(cfg.reports_dir / f"{day.isoformat()}.md", result, account)
-        print(f"processed {day}: equity {account.equity:,.2f}")
+        logger.info("processed %s: equity %.2f", day, account.equity)
 
     if account.halted:
-        print(f"HALTED: {account.halt_reason}")
+        logger.error("HALTED: %s", account.halt_reason)
         return 2
     return 0
 

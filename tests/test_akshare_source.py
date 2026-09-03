@@ -139,7 +139,7 @@ class TestSinaFallback:
         {"date": "2025-06-03", "open": 10.3, "high": 10.8, "low": 10.1, "close": 10.6, "volume": 222},
     ]
 
-    def test_eastmoney_failure_falls_back_to_sina(self, fake_akshare, tmp_path, capsys):
+    def test_eastmoney_failure_falls_back_to_sina(self, fake_akshare, tmp_path, caplog):
         def hist_fn(**kwargs):
             raise ConnectionError("blocked")
 
@@ -151,9 +151,13 @@ class TestSinaFallback:
         fake_akshare.stock_zh_a_hist = hist_fn
         fake_akshare.stock_zh_a_daily = daily_fn
         src = AkshareDataSource(tmp_path, retries=2, retry_sleep_s=0)
-        bars = src.refresh("000858", date(2025, 6, 3))
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="quant_harness.akshare"):
+            bars = src.refresh("000858", date(2025, 6, 3))
         assert [b.close for b in bars] == [10.2, 10.6]
-        assert "Sina" in capsys.readouterr().out
+        assert any("Sina" in r.message for r in caplog.records)
+        assert src._eastmoney_disabled
         # once disabled, eastmoney is not retried for later symbols
         assert src._eastmoney_disabled
 
